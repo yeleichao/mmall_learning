@@ -133,10 +133,117 @@ public class UserServiceImpl implements IUserService{
         if(resultCount > 0) {
             //用户回答正确
             String forgetToken = UUID.randomUUID().toString();//UUID
-            TokenCache.setKey("token_"+username, forgetToken);
+            TokenCache.setKey(TokenCache.TOKEN_PREFIX+username, forgetToken);
             return ServerResponse.createBySuccess(forgetToken);
         }
 
         return ServerResponse.createByErrorMessage("问题回答错误!");
      }
+
+
+    /**
+     * 忘记密码状态下用户重置密码
+     * @param username
+     * @param passwordNew
+     * @param forgetToken
+     * @return
+     */
+    public ServerResponse<String> forgetResetPassword(String username, String passwordNew, String forgetToken) {
+        if(StringUtils.isBlank(forgetToken)) {
+            return ServerResponse.createByErrorMessage("参数错误，token需要传递");
+        }
+        ServerResponse vaildResponse = this.checkVaild(username, Const.USERNAME);
+        if(vaildResponse.isSuccess()) {
+            return ServerResponse.createByErrorMessage("用户名不存在");
+        }
+        //从本地缓存中得到token
+        String token = TokenCache.getKey(TokenCache.TOKEN_PREFIX+username);
+        if(StringUtils.isBlank(token)) {
+            return ServerResponse.createByErrorMessage("token无效或者过期");
+        }
+
+        //判断两个token是否相同
+        if(org.apache.commons.lang3.StringUtils.equals(token, forgetToken)) {
+            String md5Password = MD5Util.MD5EncodeUtf8(passwordNew);
+            int resultCount = userMapper.updatePasswordByUsername(username, md5Password);
+
+            if(resultCount > 0) {
+                return ServerResponse.createByErrorMessage("修改密码成功");
+            }
+
+        }else {
+            return ServerResponse.createByErrorMessage("token错误，请重新获取");
+        }
+
+        return ServerResponse.createByErrorMessage("修改密码失败");
+    }
+
+
+    /**
+     * 登录状态下修改密码
+     * @param passwordOld
+     * @param passwordNew
+     * @param user
+     * @return
+     */
+    public ServerResponse<String> resetPassword(String passwordOld, String passwordNew, User user) {
+        int resultCount = userMapper.checkPasswordByUserId(MD5Util.MD5EncodeUtf8(passwordOld), user.getId());
+        if(resultCount == 0) {
+           return ServerResponse.createByErrorMessage("旧密码错误");
+        }
+
+        user.setPassword(MD5Util.MD5EncodeUtf8(passwordNew));
+        int updateCount = userMapper.updateByPrimaryKeySelective(user);
+        if(updateCount > 0){
+            return ServerResponse.createBySuccessMessage("密码更新成功");
+        }
+
+        return ServerResponse.createByErrorMessage("密码更新失败");
+    }
+
+    /**
+     * 更新个人信息
+     * @param user
+     * @return
+     */
+    public ServerResponse<User> updateInformation(User user) {
+        //username不可修改
+        //email修改是要校验，并且如果email存在的话，不能是登录的这个id中的eamil
+        int resultCount = userMapper.checkEmailByUserId(user.getEmail(), user.getId());
+        if(resultCount > 0) {
+            return ServerResponse.createByErrorMessage("email已存在，请更换email");
+        }
+
+        User updateUser = new User();
+        updateUser.setId(user.getId());
+        updateUser.setEmail(user.getEmail());
+        updateUser.setPhone(user.getPhone());
+        updateUser.setQuestion(user.getQuestion());
+        updateUser.setAnswer(user.getAnswer());
+
+        int updateCount = userMapper.updateByPrimaryKeySelective(updateUser);
+
+        if(updateCount > 0){
+            return  ServerResponse.createBySuccess("更新个人信息成功", updateUser);
+        }
+
+        return ServerResponse.createByErrorMessage("更新个人信息失败");
+    }
+
+
+    /**
+     * 获取用户个人信息
+     * @param userId
+     * @return
+     */
+    public ServerResponse<User> getInformation(Integer userId) {
+        User currentUser = userMapper.selectByPrimaryKey(userId);
+        if(currentUser == null) {
+            return ServerResponse.createByErrorMessage("找不到当前用户");
+        }
+
+        currentUser.setPassword(StringUtils.EMPTY);
+        return ServerResponse.createBySuccess(currentUser);
+
+    }
 }
